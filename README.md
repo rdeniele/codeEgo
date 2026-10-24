@@ -45,6 +45,9 @@ npm run build
 - Python Foundations curriculum schema
 - Nineteen authored lessons covering core syntax, types, input cleanup, operators, decisions, loops, functions, scope, collections, strings, exceptions, debugging, and clean code
 - Six runnable Python projects with requirements, milestones, hints, behavioral checks, and saved completion
+- Four scored chapter assessments combining knowledge checks, output prediction, and interactive code ordering
+- 100-point project rubrics and locally saved retrospectives
+- Adaptive review scheduling based on failed attempts, hint use, solution reveals, and independent recall
 - Monaco editor with Python syntax support
 - Real Python execution through locally installed Pyodide assets
 - Five-second execution timeout
@@ -68,8 +71,8 @@ npm run build
 
 The remaining course catalog and career paths are shown as planned instead of being represented as finished. Expansion order:
 
-1. Add chapter quizzes, rearrange-code tasks, and formal project rubrics.
-2. Add mixed-topic review sessions and spaced practice scheduling.
+1. Add adaptive mixed-topic review sessions and spaced practice scheduling.
+2. Add study-time tracking, achievement rules, and skill evidence.
 3. Add SQLite persistence through a local service for larger libraries and multi-device export workflows.
 4. Add intermediate Python, SQL, web, backend, data, AI, games, and professional engineering tracks.
 5. Add optional container runners for additional languages.

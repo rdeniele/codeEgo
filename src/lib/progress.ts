@@ -9,6 +9,9 @@ export type Attempt = {
 export type Progress = {
   completedLessonIds: string[];
   completedProjectIds: string[];
+  completedAssessmentIds: string[];
+  assessmentAttempts: Array<{ assessmentId: string; score: number; total: number; createdAt: string }>;
+  projectRetrospectives: Record<string, string>;
   attempts: Attempt[];
   notes: Record<string, string>;
   bookmarks: string[];
@@ -18,6 +21,9 @@ export type Progress = {
 export const emptyProgress: Progress = {
   completedLessonIds: [],
   completedProjectIds: [],
+  completedAssessmentIds: [],
+  assessmentAttempts: [],
+  projectRetrospectives: {},
   attempts: [],
   notes: {},
   bookmarks: [],
@@ -37,6 +43,13 @@ export function normaliseProgress(value: unknown): Progress {
     completedProjectIds: Array.isArray(raw.completedProjectIds)
       ? raw.completedProjectIds.filter((item): item is string => typeof item === "string")
       : [],
+    completedAssessmentIds: Array.isArray(raw.completedAssessmentIds)
+      ? raw.completedAssessmentIds.filter((item): item is string => typeof item === "string")
+      : [],
+    assessmentAttempts: Array.isArray(raw.assessmentAttempts) ? raw.assessmentAttempts : [],
+    projectRetrospectives: raw.projectRetrospectives && typeof raw.projectRetrospectives === "object"
+      ? raw.projectRetrospectives
+      : {},
     attempts: Array.isArray(raw.attempts) ? raw.attempts : [],
     notes: raw.notes && typeof raw.notes === "object" ? raw.notes : {},
     bookmarks: Array.isArray(raw.bookmarks)

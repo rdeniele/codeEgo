@@ -9,6 +9,7 @@ describe("Python projects", () => {
       expect(project.milestones.length).toBeGreaterThanOrEqual(3);
       expect(project.hints).toHaveLength(3);
       expect(project.tests.length).toBeGreaterThanOrEqual(2);
+      expect(project.rubric.reduce((total, item) => total + item.points, 0)).toBe(100);
       expect(project.solution.trim()).not.toBe("");
     }
   });

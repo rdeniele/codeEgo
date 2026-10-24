@@ -4,8 +4,10 @@ import dynamic from "next/dynamic";
 import Image from "next/image";
 import {
   ArrowCounterClockwise,
+  ArrowDown,
   ArrowLeft,
   ArrowRight,
+  ArrowUp,
   BookBookmark,
   BookOpenText,
   BookmarkSimple,
@@ -36,6 +38,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { allLessons, findLesson, plannedCourses, pythonFundamentals } from "@/data/curriculum";
 import { findProject, pythonProjects } from "@/data/projects";
+import { chapterAssessments, findAssessment, initialAnswers, scoreAssessment, type AssessmentAnswers } from "@/data/assessments";
 import {
   emptyProgress,
   exportProgress,
@@ -46,6 +49,7 @@ import {
   type Progress,
 } from "@/lib/progress";
 import type { ExecutionResult } from "@/lib/execution";
+import { buildReviewQueue } from "@/lib/review";
 
 const Monaco = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
@@ -97,6 +101,10 @@ export function AcademyApp() {
   const [projectOutput, setProjectOutput] = useState<ExecutionResult | null>(null);
   const [projectRunnerState, setProjectRunnerState] = useState<RunnerState>("idle");
   const [projectHintLevel, setProjectHintLevel] = useState(0);
+  const [assessmentId, setAssessmentId] = useState<string | null>(null);
+  const assessment = assessmentId ? findAssessment(assessmentId) : undefined;
+  const [assessmentAnswers, setAssessmentAnswers] = useState<AssessmentAnswers>({});
+  const [assessmentResult, setAssessmentResult] = useState<ReturnType<typeof scoreAssessment> | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -242,6 +250,33 @@ export function AcademyApp() {
     }
   }
 
+  function openAssessment(id: string) {
+    const next = findAssessment(id);
+    if (!next) return;
+    setAssessmentId(id);
+    setAssessmentAnswers(initialAnswers(next));
+    setAssessmentResult(null);
+    setActiveNav("Practice");
+  }
+
+  function submitAssessment() {
+    if (!assessment) return;
+    const result = scoreAssessment(assessment, assessmentAnswers);
+    setAssessmentResult(result);
+    setProgress((current) => ({
+      ...current,
+      completedAssessmentIds: result.passed
+        ? Array.from(new Set([...current.completedAssessmentIds, assessment.id]))
+        : current.completedAssessmentIds,
+      assessmentAttempts: [...current.assessmentAttempts, {
+        assessmentId: assessment.id,
+        score: result.score,
+        total: result.total,
+        createdAt: new Date().toISOString(),
+      }],
+    }));
+  }
+
   function downloadProgress() {
     const blob = new Blob([exportProgress(progress)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -326,6 +361,19 @@ export function AcademyApp() {
             setRunnerState("idle");
           }}
         />
+      ) : activeNav === "Practice" && assessment ? (
+        <AssessmentWorkspace
+          assessment={assessment}
+          answers={assessmentAnswers}
+          setAnswers={setAssessmentAnswers}
+          result={assessmentResult}
+          onBack={() => setAssessmentId(null)}
+          onSubmit={submitAssessment}
+          onRetry={() => {
+            setAssessmentAnswers(initialAnswers(assessment));
+            setAssessmentResult(null);
+          }}
+        />
       ) : activeNav === "Projects" && project ? (
         <ProjectWorkspace
           project={project}
@@ -336,6 +384,11 @@ export function AcademyApp() {
           hintLevel={projectHintLevel}
           setHintLevel={setProjectHintLevel}
           completed={progress.completedProjectIds.includes(project.id)}
+          retrospective={progress.projectRetrospectives[project.id] ?? ""}
+          setRetrospective={(value) => setProgress((current) => ({
+            ...current,
+            projectRetrospectives: { ...current.projectRetrospectives, [project.id]: value },
+          }))}
           onBack={() => setProjectId(null)}
           execute={executeProject}
           reset={() => {
@@ -352,6 +405,8 @@ export function AcademyApp() {
           onExport={downloadProgress}
           onImport={() => fileInput.current?.click()}
           onOpenProject={openProject}
+          onOpenAssessment={openAssessment}
+          onReviewLesson={switchLesson}
         />
       )}
 
@@ -366,7 +421,56 @@ export function AcademyApp() {
   );
 }
 
-function ProjectWorkspace({ project, code, setCode, output, runnerState, hintLevel, setHintLevel, completed, onBack, execute, reset }: {
+function AssessmentWorkspace({ assessment, answers, setAnswers, result, onBack, onSubmit, onRetry }: {
+  assessment: NonNullable<ReturnType<typeof findAssessment>>;
+  answers: AssessmentAnswers;
+  setAnswers: React.Dispatch<React.SetStateAction<AssessmentAnswers>>;
+  result: ReturnType<typeof scoreAssessment> | null;
+  onBack: () => void;
+  onSubmit: () => void;
+  onRetry: () => void;
+}) {
+  function moveLine(questionId: string, index: number, direction: -1 | 1) {
+    setAnswers((current) => {
+      const order = [...(current[questionId] as string[])];
+      const nextIndex = index + direction;
+      if (nextIndex < 0 || nextIndex >= order.length) return current;
+      [order[index], order[nextIndex]] = [order[nextIndex], order[index]];
+      return { ...current, [questionId]: order };
+    });
+  }
+
+  return (
+    <section className="assessment-workspace">
+      <header className="assessment-topbar">
+        <button className="toolbar-button" onClick={onBack}><ArrowLeft size={17} />All practice</button>
+        <div><strong>{assessment.title}</strong><span>{assessment.chapterLabel} · {assessment.estimatedMinutes} min</span></div>
+        <span className="assessment-pass">Pass: {assessment.passScore}/{assessment.questions.length}</span>
+      </header>
+      <div className="assessment-content">
+        <div className="assessment-intro"><span className="status-label">Chapter assessment</span><h1>{assessment.title}</h1><p>{assessment.description}</p></div>
+        {assessment.questions.map((question, questionIndex) => {
+          const questionResult = result?.results.find((item) => item.questionId === question.id);
+          return <section className={questionResult ? `question-card ${questionResult.passed ? "correct" : "incorrect"}` : "question-card"} key={question.id}>
+            <div className="question-number">{questionIndex + 1}</div>
+            <div className="question-body"><span className="question-kind">{question.kind === "prediction" ? "Predict output" : question.kind === "ordering" ? "Arrange code" : "Knowledge check"}</span><h2>{question.prompt}</h2>
+              {question.code && <pre className="inline-code"><code>{question.code}</code></pre>}
+              {question.kind === "ordering" ? <div className="ordering-list">{(answers[question.id] as string[]).map((line, index) => <div key={`${line}-${index}`}><code>{line}</code><span><button onClick={() => moveLine(question.id, index, -1)} disabled={index === 0} aria-label="Move line up"><ArrowUp size={15} /></button><button onClick={() => moveLine(question.id, index, 1)} disabled={index === (answers[question.id] as string[]).length - 1} aria-label="Move line down"><ArrowDown size={15} /></button></span></div>)}</div>
+                : <div className="answer-options">{question.options?.map((option) => <label key={option}><input type="radio" name={question.id} checked={answers[question.id] === option} onChange={() => setAnswers((current) => ({ ...current, [question.id]: option }))} /><span>{option}</span></label>)}</div>}
+              {questionResult && <p className="answer-explanation"><strong>{questionResult.passed ? "Correct." : "Review this one."}</strong> {question.explanation}</p>}
+            </div>
+          </section>;
+        })}
+        <footer className="assessment-submit">
+          {result ? <div className={result.passed ? "assessment-result passed" : "assessment-result failed"}><strong>{result.score}/{result.total}</strong><span>{result.passed ? "Assessment passed and saved" : "Review the explanations and try again"}</span></div> : <p>Your score and attempt will be saved locally.</p>}
+          {result ? <button className="primary-action" onClick={onRetry}><ArrowCounterClockwise size={17} />Try again</button> : <button className="primary-action" onClick={onSubmit}><CheckCircle size={17} />Submit assessment</button>}
+        </footer>
+      </div>
+    </section>
+  );
+}
+
+function ProjectWorkspace({ project, code, setCode, output, runnerState, hintLevel, setHintLevel, completed, retrospective, setRetrospective, onBack, execute, reset }: {
   project: NonNullable<ReturnType<typeof findProject>>;
   code: string;
   setCode: (value: string) => void;
@@ -375,6 +479,8 @@ function ProjectWorkspace({ project, code, setCode, output, runnerState, hintLev
   hintLevel: number;
   setHintLevel: (value: number) => void;
   completed: boolean;
+  retrospective: string;
+  setRetrospective: (value: string) => void;
   onBack: () => void;
   execute: (validate: boolean) => void;
   reset: () => void;
@@ -396,10 +502,12 @@ function ProjectWorkspace({ project, code, setCode, output, runnerState, hintLev
         <div className="project-skills">{project.skills.map((skill) => <span key={skill}>{skill}</span>)}</div>
         <section><h2>Requirements</h2><ul>{project.requirements.map((item) => <li key={item}>{item}</li>)}</ul></section>
         <section><h2>Milestones</h2><ol>{project.milestones.map((item) => <li key={item}>{item}</li>)}</ol></section>
+        <section><h2>100-point rubric</h2><div className="rubric-list">{project.rubric.map((item) => <div key={item.criterion}><strong>{item.criterion}</strong><p>{item.evidence}</p><span>{item.points} pts</span></div>)}</div></section>
         <section><div className="section-title-row"><h2>Hints</h2><span>{hintLevel} of 3 used</span></div>
           {project.hints.slice(0, hintLevel).map((hint, index) => <div className="hint" key={hint}><span>{index + 1}</span><p>{hint}</p></div>)}
           {hintLevel < 3 && <button className="text-button" onClick={() => setHintLevel(hintLevel + 1)}><Lightbulb size={17} />Reveal hint {hintLevel + 1}</button>}
         </section>
+        <section><h2>Project retrospective</h2><p className="muted">Record what worked, what was difficult, and what you would improve next.</p><textarea className="notes" value={retrospective} onChange={(event) => setRetrospective(event.target.value)} placeholder="I learned… Next time I would…" /></section>
       </article>
       <section className="coding-pane" aria-label="Project coding workspace">
         <div className="pane-toolbar"><div className="file-tab"><BracketsCurly size={17} /> project.py</div><div className="toolbar-actions">
@@ -686,16 +794,19 @@ function CourseOutline({ open, mobileOpen, currentLessonId, progress, onToggle, 
   );
 }
 
-function Overview({ activeNav, progress, onContinue, onExport, onImport, onOpenProject }: {
+function Overview({ activeNav, progress, onContinue, onExport, onImport, onOpenProject, onOpenAssessment, onReviewLesson }: {
   activeNav: NavItem;
   progress: Progress;
   onContinue: () => void;
   onExport: () => void;
   onImport: () => void;
   onOpenProject: (id: string) => void;
+  onOpenAssessment: (id: string) => void;
+  onReviewLesson: (id: string) => void;
 }) {
   const lessons = allLessons();
   const percent = Math.round((progress.completedLessonIds.length / lessons.length) * 100);
+  const reviewQueue = buildReviewQueue(progress.attempts).filter((item) => Boolean(findLesson(item.lessonId)));
   return (
     <section className="overview">
       <header className="overview-header">
@@ -717,11 +828,26 @@ function Overview({ activeNav, progress, onContinue, onExport, onImport, onOpenP
           </section>
           <section className="metric-panel"><span>Course completion</span><strong>{percent}%</strong><p>{progress.completedLessonIds.length} of {lessons.length} lessons</p></section>
           <section className="metric-panel"><span>Attempts saved</span><strong>{progress.attempts.length}</strong><p>Based on your real submissions</p></section>
-          <section className="metric-panel"><span>Bookmarks</span><strong>{progress.bookmarks.length}</strong><p>Lessons saved for review</p></section>
+          <section className="metric-panel"><span>Assessments passed</span><strong>{progress.completedAssessmentIds.length}</strong><p>{progress.assessmentAttempts.length} scored attempts</p></section>
           <section className="review-panel">
             <h2>Review queue</h2>
-            {progress.attempts.some((attempt) => !attempt.passed) ? <p>Revisit lessons with a failed attempt and try again without revealing the solution.</p> : <p>Your review queue is clear. Failed attempts will appear here automatically.</p>}
+            {reviewQueue.length ? <div className="review-items">{reviewQueue.slice(0, 3).map((item) => <button key={item.lessonId} onClick={() => onReviewLesson(item.lessonId)}><span><strong>{findLesson(item.lessonId)?.title}</strong><small>{item.reason}</small></span><ArrowRight size={16} /></button>)}</div> : <p>Your review queue is clear. Attempts return when they are due for recall.</p>}
           </section>
+        </div>
+      ) : activeNav === "Practice" ? (
+        <div className="practice-catalog">
+          <div className="project-intro"><span className="status-label">Check real understanding</span><h2>Practice, get feedback, retry.</h2><p>Chapter assessments mix knowledge checks, output prediction, and hands-on code ordering. Every result is based on your answers and saved locally.</p></div>
+          <div className="assessment-grid">{chapterAssessments.map((assessment, index) => {
+            const complete = progress.completedAssessmentIds.includes(assessment.id);
+            const latest = [...progress.assessmentAttempts].reverse().find((attempt) => attempt.assessmentId === assessment.id);
+            return <article className="assessment-card" key={assessment.id}>
+              <div className="assessment-card-top"><span>CHECK {index + 1}</span>{complete ? <CheckCircle size={21} weight="fill" /> : <ListChecks size={21} />}</div>
+              <small>{assessment.chapterLabel}</small><h2>{assessment.title}</h2><p>{assessment.description}</p>
+              <div className="assessment-meta"><span>{assessment.questions.length} questions</span><span>{assessment.estimatedMinutes} min</span>{latest && <span>Last: {latest.score}/{latest.total}</span>}</div>
+              <button className="primary-action" onClick={() => onOpenAssessment(assessment.id)}>{complete ? "Practice again" : "Start assessment"}<ArrowRight size={16} /></button>
+            </article>;
+          })}</div>
+          <section className="mixed-review"><div><span className="status-label">Adaptive review</span><h2>{reviewQueue.length ? `${reviewQueue.length} lesson${reviewQueue.length === 1 ? "" : "s"} due now` : "Your queue is clear"}</h2><p>{reviewQueue.length ? "Failed work returns immediately; hinted and independent solutions return later for recall." : "Complete lessons and projects to build a schedule from your real attempts."}</p>{reviewQueue[0] && <button className="text-button" onClick={() => onReviewLesson(reviewQueue[0].lessonId)}>Review {findLesson(reviewQueue[0].lessonId)?.title}<ArrowRight size={16} /></button>}</div><div><strong>{progress.assessmentAttempts.length}</strong><span>assessment attempts</span></div></section>
         </div>
       ) : activeNav === "Projects" ? (
         <div className="project-catalog">

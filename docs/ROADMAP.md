@@ -2,15 +2,15 @@
 
 ## Python Foundations projects
 
-The complete 19-lesson beginner sequence and six runnable projects are now authored with behavioral checks. Next, add formal rubrics, retrospectives, and chapter assessments.
+The complete 19-lesson beginner sequence and six runnable projects are authored with behavioral checks. Projects now include 100-point rubrics and saved retrospectives, and four chapter assessments cover knowledge, output prediction, and code ordering.
 
 ## Exercise engine expansion
 
-Add multiple-choice checks, output prediction, statement ordering, debugging with failing tests, function contracts, randomized inputs, and multi-step projects. Keep validation behavioral and include edge cases.
+Multiple-choice checks, output prediction, statement ordering, debugging with failing tests, function contracts, and multi-step projects are implemented. Next, add randomized assessment inputs and richer multi-file project workflows.
 
 ## Learning systems
 
-Add spaced review scheduling, chapter quizzes, assessment sessions, study-time tracking, achievement rules, project retrospectives, and skill evidence. Metrics must continue to come from saved learning activity.
+Spaced review scheduling, chapter quizzes, assessment sessions, and project retrospectives now derive from saved learning activity. Next, add study-time tracking, achievement rules, and skill evidence.
 
 ## Catalog expansion
 
